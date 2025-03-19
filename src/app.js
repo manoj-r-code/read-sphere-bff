@@ -81,7 +81,7 @@ app.use(
     cors({
         origin: [
             'http://localhost:4200',
-            '', // Frontend URL
+            'https://read-sphere.netlify.app', // Frontend URL
         ],
     })
 );
