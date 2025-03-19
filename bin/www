@@ -1,0 +1,123 @@
+#!/usr/bin/env node
+const http = require('http');
+const mongoose = require('mongoose');
+
+const logger = require('../src/utils/logger');
+const redisConnection = require('../src/utils/redis-cache-handler');
+
+const app = require('../src/app');
+
+mongoose.connect(process.env.MONGO_URL, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+});
+const dbConnection = mongoose.connection;
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+    const portToNormalize = parseInt(val, 10);
+
+    if (Number.isNaN(portToNormalize)) {
+        // named pipe
+        return val;
+    }
+
+    if (portToNormalize >= 0) {
+        // port number
+        return portToNormalize;
+    }
+
+    return false;
+}
+
+/**
+ * Get port from environment and store in Express.
+ */
+const port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+const server = http.createServer(app);
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+    if (error.syscall !== 'listen') {
+        throw error;
+    }
+
+    const bind = typeof port === 'string' ? `Pipe ${port}` : `Port ${port}`;
+
+    // handle specific listen errors with friendly messages
+    switch (error.code) {
+        case 'EACCES':
+            logger.error({ message: `${bind} requires elevated privileges` });
+            process.exit(1);
+            break;
+        case 'EADDRINUSE':
+            logger.error({ message: `${bind} is already in use` });
+            process.exit(1);
+            break;
+        default:
+            throw error;
+    }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+function onListening() {
+    const addr = server.address();
+    const bind = typeof addr === 'string' ? `pipe ${addr}` : `${port} addr.port`;
+    logger.info({ message: `Server Listening on ${bind}` });
+}
+
+const waitForDBConnection = (connection) =>
+    new Promise((resolve, reject) => {
+        // connection.connect();
+        connection.once('open', () => {
+            logger.info({ message: `Connected to ${connection.host}` });
+            resolve();
+        });
+
+        connection.on('error', (error) => {
+            logger.error({ message: `Error while connecting to DB (${connection.host})`, error: error.message });
+            reject();
+        });
+    });
+
+const waitForRedisConnection = (connection) =>
+    new Promise((resolve, reject) => {
+        connection.once('ready', () => {
+            logger.info({ message: `Connected to redis` });
+            resolve();
+        });
+
+        connection.on('error', (error) => {
+            logger.error({ message: `Error while connecting to redis`, error: error.message });
+            reject();
+        });
+    });
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.on('error', onError);
+server.on('listening', onListening);
+
+Promise.all([waitForDBConnection(dbConnection)])
+    .then(() => {
+        server.listen(port);
+    })
+    .catch((error) => {
+        logger.error({ message: 'Could not connect to a DB', error: error.message });
+    });
